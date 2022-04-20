@@ -1,0 +1,18 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include raviproducts *.css
+recursive-include raviproducts *.csv
+recursive-include raviproducts *.html
+recursive-include raviproducts *.ico
+recursive-include raviproducts *.js
+recursive-include raviproducts *.json
+recursive-include raviproducts *.md
+recursive-include raviproducts *.png
+recursive-include raviproducts *.py
+recursive-include raviproducts *.svg
+recursive-include raviproducts *.txt
+recursive-exclude raviproducts *.pyc
