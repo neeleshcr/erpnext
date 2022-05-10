@@ -134,11 +134,11 @@ class Analytics(object):
 				(self.filters.company, self.filters.from_date, self.filters.to_date),
 				as_dict=1,
 			)
-		else:
+		elif self.filters["value_quantity"] == "Quantity":
 			value_field = "total_qty"
 			self.entries = frappe.db.sql(
-				""" select s.order_type as entity, s.{value_field} * i.weight_per_unit as value_field, s.{date_field}
-				from `tab{doctype}` s where s.docstatus = 1 and s.company = %s and s.{date_field} between %s and %s
+				""" select s.order_type as entity, s.{value_field} * s.weight_per_unit as value_field, s.{date_field}
+				from `tab{doctype}` s where s.docstatus = 1 and s.company = %s  and s.status != 'Return' and s.{date_field} between %s and %s
 				and ifnull(s.order_type, '') != '' order by s.order_type
 			""".format(
 					date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
@@ -146,7 +146,18 @@ class Analytics(object):
 				(self.filters.company, self.filters.from_date, self.filters.to_date),
 				as_dict=1,
 			)
-
+		elif self.filters["value_quantity"] == "QuantityWscheme":
+			value_field = "total_qty"
+			self.entries = frappe.db.sql(
+				""" select s.order_type as entity, s.{value_field} * s.weight_per_unit as value_field, s.{date_field}
+				from `tab{doctype}` s where s.docstatus = 1 and s.company = %s  and s.status != 'Return' and s.{date_field} between %s and %s
+				and ifnull(s.order_type, '') != '' order by s.order_type and s.item_name NOT LIKE '%Scheme%'
+			""".format(
+					date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
+				),
+				(self.filters.company, self.filters.from_date, self.filters.to_date),
+				as_dict=1,
+			)
 		self.get_teams()
 
 	def get_sales_transactions_based_on_customers_or_suppliers(self):
@@ -169,7 +180,7 @@ class Analytics(object):
 					self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
 				},
 			)
-		else:
+		elif self.filters["value_quantity"] == "Quantity":
 			value_field = "total_qty as value_field"
 
 			if self.filters.tree_type == "Customer":
@@ -186,15 +197,42 @@ class Analytics(object):
 					"docstatus": 1,
 					"company": self.filters.company,
 					self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
+					"status":("!=",'Return')
 				},
 			)
 			res2 = [a_dict["name"] for a_dict in self.entries]
 			for i in self.entries:
-			    ff = frappe.db.sql(f""" select Sum(qty*weight_per_unit) as yy from `tab{self.filters.doc_type} Item` where parent = '{i.name}' """,as_dict=1)
+			    ff = frappe.db.sql(f""" select Sum(total_weight*weight_per_unit) as yy from `tab{self.filters.doc_type} Item` where parent = '{i.name}'""",as_dict=1)
 			    index = res2.index(i.name)
 			    ff3 = self.entries[index]
 			    ff3['value_field'] = ff[0]['yy']
 
+		elif self.filters["value_quantity"] == "QuantityWscheme":
+			value_field = "total_qty as value_field"
+
+			if self.filters.tree_type == "Customer":
+				entity = "customer as entity"
+				entity_name = "customer_name as entity_name"
+			else:
+				entity = "supplier as entity"
+				entity_name = "supplier_name as entity_name"
+
+			self.entries = frappe.get_all(
+				self.filters.doc_type,
+				fields=[entity, entity_name, value_field, self.date_field,"name"],
+				filters={
+					"docstatus": 1,
+					"company": self.filters.company,
+					self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
+					"status":("!=",'Return')
+				},
+			)
+			res2 = [a_dict["name"] for a_dict in self.entries]
+			for i in self.entries:
+			    ff = frappe.db.sql(f""" select Sum(total_weight*weight_per_unit) as yy from `tab{self.filters.doc_type} Item` where parent = '{i.name}'  and item_name NOT LIKE '%Scheme%' """,as_dict=1)
+			    index = res2.index(i.name)
+			    ff3 = self.entries[index]
+			    ff3['value_field'] = ff[0]['yy']
 
 		self.entity_names = {}
 		for d in self.entries:
@@ -216,23 +254,34 @@ class Analytics(object):
 				(self.filters.company, self.filters.from_date, self.filters.to_date),
 				as_dict=1,
 			)
-		else:
-			value_field = "stock_qty"
+		elif self.filters["value_quantity"] == "Quantity":
+			value_field = "total_weight"
 			self.entries = frappe.db.sql(
 				"""
-				select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.{value_field} * i.weight_per_unit as value_field, s.{date_field}
+				select i.item_code as entity, i.item_name as entity_name, i.stock_uom,  i.{value_field}*i.weight_per_unit as value_field, s.{date_field}
 				from `tab{doctype} Item` i , `tab{doctype}` s
-				where s.name = i.parent and i.docstatus = 1 and s.company = %s
+				where s.name = i.parent and i.docstatus = 1 and s.company = %s and s.status != 'Return'
 				and s.{date_field} between %s and %s
 			""".format(
 					date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
 				),
 				(self.filters.company, self.filters.from_date, self.filters.to_date),
 				as_dict=1,
+			)
+		elif self.filters["value_quantity"] == "QuantityWscheme":
+			value_field = "total_weight"
+			self.entries = frappe.db.sql(
+				f"""
+				select i.item_code as entity, i.item_name as entity_name, i.stock_uom,  i.{value_field}*i.weight_per_unit as value_field, s.{self.date_field}
+				from `tab{self.filters.doc_type} Item` i , `tab{self.filters.doc_type}` s
+				where s.name = i.parent and i.docstatus = 1 and s.company = '{self.filters.company}' and s.status != 'Return'
+				and s.{self.date_field} between '{self.filters.from_date}' and '{self.filters.to_date}' and  i.item_name NOT LIKE  "%Scheme%"
+			""",
+				as_dict=1,
 			)	
 # saad 28-04-22
 		# self.entries = {}
-		# if value_field == "base_amount":
+		# if value_field == "base_amount":*i.weight_per_unit 
 		# 	self.entries = frappe.db.sql(
 		# 		"""
 		# 		select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.{value_field} as value_field, s.{date_field}
@@ -292,7 +341,7 @@ class Analytics(object):
 					self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
 				},
 			)
-		else:
+		elif self.filters["value_quantity"] == "Quantity":
 			value_field = "total_qty as value_field"
 			if self.filters.tree_type == "Customer Group":
 				entity_field = "customer_group as entity"
@@ -310,54 +359,107 @@ class Analytics(object):
 					"docstatus": 1,
 					"company": self.filters.company,
 					self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
+					"status":("!=",'Return')
 				},
 			)
 			res2 = [a_dict["name"] for a_dict in self.entries]
 			for i in self.entries:
-			    ff = frappe.db.sql(f""" select Sum(qty*weight_per_unit) as yy from `tab{self.filters.doc_type} Item` where parent = '{i.name}' """,as_dict=1)
+			    ff = frappe.db.sql(f""" select Sum(total_weight*weight_per_unit) as yy from `tab{self.filters.doc_type} Item` where parent = '{i.name}' """,as_dict=1)
+			    index = res2.index(i.name)
+			    ff3 = self.entries[index]
+			    ff3['value_field'] = ff[0]['yy']
+			    # ff3['value_field'] = i.name
+
+		elif self.filters["value_quantity"] == "QuantityWscheme":
+			value_field = "total_qty as value_field"
+			if self.filters.tree_type == "Customer Group":
+				entity_field = "customer_group as entity"
+			elif self.filters.tree_type == "Supplier Group":
+				entity_field = "supplier as entity"
+				self.get_supplier_parent_child_map()
+			else:
+				entity_field = "territory as entity"
+
+
+			self.entries = frappe.get_all(
+				self.filters.doc_type,
+				fields=[entity_field, value_field, self.date_field,"name"],
+				filters={
+					"docstatus": 1,
+					"company": self.filters.company,
+					self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
+					"status":("!=",'Return')
+				},
+			)
+			res2 = [a_dict["name"] for a_dict in self.entries]
+			for i in self.entries:
+			    ff = frappe.db.sql(f""" select Sum(total_weight*weight_per_unit) as yy from `tab{self.filters.doc_type} Item` where parent = '{i.name}'  and item_name NOT LIKE '%Scheme%'  """,as_dict=1)
 			    index = res2.index(i.name)
 			    ff3 = self.entries[index]
 			    ff3['value_field'] = ff[0]['yy']
 
 
-
 		self.get_groups()
 
 	def get_sales_transactions_based_on_item_group(self):
+		ssc = " "
 		if self.filters["value_quantity"] == "Value":
 			value_field = "base_amount"
-			self.entries = frappe.db.sql(
-				"""
-				select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.{value_field} as value_field, s.{date_field}
-				from `tab{doctype} Item` i , `tab{doctype}` s
-				where s.name = i.parent and i.docstatus = 1 and s.company = %s
-				and s.{date_field} between %s and %s
-			""".format(
-					date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
-				),
-				(self.filters.company, self.filters.from_date, self.filters.to_date),
-				as_dict=1,
-			)
-		else:
-			value_field = "qty"
-			self.entries = frappe.db.sql(
-				"""
-				select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.{value_field} * i.weight_per_unit as value_field, s.{date_field}
-				from `tab{doctype} Item` i , `tab{doctype}` s
-				where s.name = i.parent and i.docstatus = 1 and s.company = %s
-				and s.{date_field} between %s and %s
-			""".format(
-					date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
-				),
-				(self.filters.company, self.filters.from_date, self.filters.to_date),
-				as_dict=1,
-			)
+			ssc = " "
+
+		elif self.filters["value_quantity"] == "Quantity":
+			value_field = "total_weight* i.weight_per_unit"
+			ssc = " "
+
+		elif self.filters["value_quantity"] == "QuantityWscheme":
+			value_field = "total_weight* i.weight_per_unit"
+			ssc = f" and  i.item_name NOT LIKE '%Scheme%'"
+
+		self.entries = frappe.db.sql(
+			f"""
+			select i.item_group as entity, i.{value_field} as value_field, s.{self.date_field}
+			from `tab{self.filters.doc_type} Item` i , `tab{self.filters.doc_type}` s
+			where s.name = i.parent and i.docstatus = 1 and s.company ='{self.filters.company}' and s.status != 'Return'
+			and s.{self.date_field} between '{self.filters.from_date}' and '{self.filters.to_date}' {ssc}
+		""",
+			as_dict=1,
+		)
+
+		self.get_groups()
+		# if self.filters["value_quantity"] == "Value":
+		# 	value_field = "base_amount"
+		# 	self.entries = frappe.db.sql(
+		# 		"""
+		# 		select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.{value_field} as value_field, s.{date_field}
+		# 		from `tab{doctype} Item` i , `tab{doctype}` s
+		# 		where s.name = i.parent and i.docstatus = 1 and s.company = %s
+		# 		and s.{date_field} between %s and %s
+		# 	""".format(
+		# 			date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
+		# 		),
+		# 		(self.filters.company, self.filters.from_date, self.filters.to_date),
+		# 		as_dict=1,
+		# 	)
+		# else:
+		# 	value_field = "total_weight"
+			# self.entries = frappe.db.sql(
+			# 	"""
+			# 	select i.item_code as entity, i.item_name as entity_name, i.stock_uom, 1+1 as value_field, s.{date_field}
+			# 	from `tab{doctype} Item` i , `tab{doctype}` s
+			# 	where s.name = i.parent and i.docstatus = 1 and s.company = %s and s.status != 'Return'
+			# 	and s.{date_field} between %s and %s
+			# """.format(
+			# 		date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
+			# 	),
+			# 	(self.filters.company, self.filters.from_date, self.filters.to_date),
+			# 	as_dict=1,
+			# )
 
 
 # # saad 28-04-22
 # 		self.entries = {}
 
-# 		if value_field == "base_amount":
+# 		if value_field == "base_amount":i.{value_field} * i.weight_per_unit
 # 			self.entries = frappe.db.sql(
 # 				"""
 # 				select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.{value_field} as value_field, s.{date_field}
@@ -384,7 +486,7 @@ class Analytics(object):
 # 				as_dict=1,
 # 			)	
 # saad 28-04-22
-		self.get_groups()
+		# self.get_groups()
 
 	def get_sales_transactions_based_on_project(self):
 		if self.filters["value_quantity"] == "Value":
@@ -400,21 +502,55 @@ class Analytics(object):
 					self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
 				},
 			)
-		else:
+		elif self.filters["value_quantity"] == "Quantity":
 			value_field = "total_qty as value_field"
 
-		entity = "project as entity"
+			entity = "project as entity"
 
-		self.entries = frappe.get_all(
-			self.filters.doc_type,
-			fields=[entity, value_field, self.date_field,"name"],
-			filters={
-				"docstatus": 1,
-				"company": self.filters.company,
-				"project": ["!=", ""],
-				self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
-			},
-		)
+			self.entries = frappe.get_all(
+				self.filters.doc_type,
+				fields=[entity, value_field, self.date_field,"name"],
+				filters={
+					"docstatus": 1,
+					"company": self.filters.company,
+					"project": ["!=", ""],
+					self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
+					"status":("!=",'Return')
+
+				},
+			)
+
+			res2 = [a_dict["name"] for a_dict in self.entries]
+			for i in self.entries:
+			    ff = frappe.db.sql(f""" select Sum(total_weight*weight_per_unit) as yy from `tab{self.filters.doc_type} Item` where parent = '{i.name}' """,as_dict=1)
+			    index = res2.index(i.name)
+			    ff3 = self.entries[index]
+			    ff3['value_field'] = ff[0]['yy']
+
+		elif self.filters["value_quantity"] == "QuantityWscheme":
+			value_field = "total_qty as value_field"
+
+			entity = "project as entity"
+
+			self.entries = frappe.get_all(
+				self.filters.doc_type,
+				fields=[entity, value_field, self.date_field,"name"],
+				filters={
+					"docstatus": 1,
+					"company": self.filters.company,
+					"project": ["!=", ""],
+					self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
+					"status":("!=",'Return')
+
+				},
+			)
+
+			res2 = [a_dict["name"] for a_dict in self.entries]
+			for i in self.entries:
+			    ff = frappe.db.sql(f""" select Sum(total_weight*weight_per_unit) as yy from `tab{self.filters.doc_type} Item` where parent = '{i.name}' and item_name NOT LIKE '%Scheme%'""",as_dict=1)
+			    index = res2.index(i.name)
+			    ff3 = self.entries[index]
+			    ff3['value_field'] = ff[0]['yy']
 
 		# self.entries = frappe.get_all(
 		# 	self.filters.doc_type,
@@ -425,13 +561,6 @@ class Analytics(object):
 		# 		self.date_field: ("between", [self.filters.from_date, self.filters.to_date]),
 		# 	},
 		# )
-		res2 = [a_dict["name"] for a_dict in self.entries]
-		for i in self.entries:
-		    ff = frappe.db.sql(f""" select Sum(qty*weight_per_unit) as yy from `tab{self.filters.doc_type} Item` where parent = '{i.name}' """,as_dict=1)
-		    index = res2.index(i.name)
-		    ff3 = self.entries[index]
-		    ff3['value_field'] = ff[0]['yy']
-
 
 	def get_rows(self):
 		self.data = []

@@ -26,7 +26,8 @@ frappe.query_reports["Custom Sales Analytics"] = {
 			fieldtype: "Select",
 			options: [
 				{ "value": "Value", "label": __("Value") },
-				{ "value": "Quantity", "label": __("Quantity") },
+				{ "value": "Quantity", "label": __("Quantity (Kg Sold) - with scheme") },
+				{ "value": "QuantityWscheme", "label": __("Quantity (Kg Sold) - without scheme") },
 			],
 			default: "Value",
 			reqd: 1
