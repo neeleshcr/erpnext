@@ -5,7 +5,7 @@
 import frappe
 from frappe import _
 from frappe.utils import getdate
-
+import json
 
 def get_columns(filters, trans):
 	validate_filters(filters)
@@ -240,9 +240,9 @@ def period_wise_columns_query(filters, trans):
 			_(filters.get("fiscal_year")) + " (" + _("Qty") + "):Float:120",
 			_(filters.get("fiscal_year")) + " (" + _("Amt") + "):Currency:120",
 		]
-		query_details = " SUM(t2.stock_qty)*sum(t2.weight_per_unit), SUM(t2.base_net_amount),"
+		query_details = " SUM(t2.qty*t2.weight_per_unit), SUM(t2.base_net_amount),"
 
-	query_details += "SUM(t2.stock_qty)*sum(t2.weight_per_unit), SUM(t2.base_net_amount)"
+	query_details += "SUM(t2.qty*t2.weight_per_unit), SUM(t2.base_net_amount)"
 	return pwc, query_details
 
 
@@ -260,7 +260,7 @@ def get_period_wise_columns(bet_dates, period, pwc):
 
 
 def get_period_wise_query(bet_dates, trans_date, query_details):
-	query_details += """SUM(IF(t1.%(trans_date)s BETWEEN '%(sd)s' AND '%(ed)s', t2.stock_qty, NULL))*SUM(IF(t1.%(trans_date)s BETWEEN '%(sd)s' AND '%(ed)s',t2.weight_per_unit,NULL)),
+	query_details += """SUM(IF(t1.%(trans_date)s BETWEEN '%(sd)s' AND '%(ed)s',t2.qty*t2.weight_per_unit, NULL)),
 					SUM(IF(t1.%(trans_date)s BETWEEN '%(sd)s' AND '%(ed)s', t2.base_net_amount, NULL)),
 				""" % {
 		"trans_date": trans_date,
@@ -268,6 +268,9 @@ def get_period_wise_query(bet_dates, trans_date, query_details):
 		"ed": bet_dates[1],
 	}
 	return query_details
+
+	# query_details += """SUM(IF(t1.%(trans_date)s BETWEEN '%(sd)s' AND '%(ed)s',t2.qty, NULL))*SUM(IF(t1.%(trans_date)s BETWEEN '%(sd)s' AND '%(ed)s',t2.weight_per_unit,NULL)),
+
 
 
 @frappe.whitelist(allow_guest=True)
@@ -387,3 +390,47 @@ def group_wise_column(group_by):
 		return [group_by + ":Link/" + group_by + ":120"]
 	else:
 		return []
+
+
+
+
+
+@frappe.whitelist(allow_guest=True)
+def get_period_date_ranges_columns(period, fiscal_year=None, year_start_date=None):
+	from dateutil.relativedelta import relativedelta
+
+	if not year_start_date:
+		year_start_date, year_end_date = frappe.db.get_value(
+			"Fiscal Year", fiscal_year, ["year_start_date", "year_end_date"]
+		)
+
+	increment = {"Monthly": 1, "Quarterly": 3, "Half-Yearly": 6, "Yearly": 12}.get(period)
+
+	period_date_ranges = []
+	query = ''
+	row = ''
+	colm = []
+	for i in range(1, 13, increment):
+		period_end_date = getdate(year_start_date) + relativedelta(months=increment, days=-1)
+		if period_end_date > getdate(year_end_date):
+			period_end_date = year_end_date
+		period_date_ranges.append([year_start_date, period_end_date])
+		start = getdate(year_start_date).strftime("%b%y") 
+		end   = getdate(period_end_date).strftime("%b%y")
+
+		row += f'							sum({start}.qty) as  {start}, ' 
+		colm.append({'fieldname': f'{start}','label': f'{start}','fieldtype': 'Data','default' :0.00,'width':  105})
+
+		query += f""" \n
+				LEFT JOIN `tabSales Invoice Item` {start} ON sii.name = {start}.name 
+				and si.posting_date between '{year_start_date}' 
+				and '{period_end_date}' 
+				   """
+
+		year_start_date = period_end_date + relativedelta(days=1)
+		if period_end_date == year_end_date:
+			break
+	js_ss = json.dumps(query)
+	ddd = json.loads(js_ss)
+	return [colm,row,query]
+

@@ -62,7 +62,7 @@ class Analytics(object):
 				"width": 140 if self.filters.tree_type != "Order Type" else 200,
 			}
 		]
-		if self.filters.tree_type in ["Customer", "Supplier", "Item"]:
+		if self.filters.tree_type in ["Item"]:
 			self.columns.append(
 				{
 					"label": _(self.filters.tree_type + " Name"),
@@ -71,7 +71,15 @@ class Analytics(object):
 					"width": 140,
 				}
 			)
-
+		if self.filters.tree_type in ["Customer", "Supplier"]:
+			self.columns.append(
+				{
+					"label": _(self.filters.tree_type + " Name"),
+					"fieldname": "entity_name",
+					"fieldtype": "Data",
+					"width": 140,
+				}
+			)
 		if self.filters.tree_type == "Item":
 			self.columns.append(
 				{
@@ -169,10 +177,10 @@ class Analytics(object):
 
 			if self.filters.tree_type == "Customer":
 				entity = "customer as entity"
-				entity_name = "customer_name as entity_name"
+				entity_name = "customer_group as entity_name"
 			else:
 				entity = "supplier as entity"
-				entity_name = "supplier_name as entity_name"
+				entity_name = "supplier_group as entity_name"
 
 			self.entries = frappe.get_all(
 				self.filters.doc_type,
@@ -189,10 +197,10 @@ class Analytics(object):
 
 			if self.filters.tree_type == "Customer":
 				entity = "customer as entity"
-				entity_name = "customer_name as entity_name"
+				entity_name = "customer_group as entity_name"
 			else:
 				entity = "supplier as entity"
-				entity_name = "supplier_name as entity_name"
+				entity_name = "supplier_group as entity_name"
 
 			self.entries = frappe.get_all(
 				self.filters.doc_type,
@@ -215,10 +223,10 @@ class Analytics(object):
 
 			if self.filters.tree_type == "Customer":
 				entity = "customer as entity"
-				entity_name = "customer_name as entity_name"
+				entity_name = "customer_group as entity_name"
 			else:
 				entity = "supplier as entity"
-				entity_name = "supplier_name as entity_name"
+				entity_name = "supplier_group as entity_name"
 
 			self.entries = frappe.get_all(
 				self.filters.doc_type,
@@ -259,7 +267,7 @@ class Analytics(object):
 				as_dict=1,
 			)
 		elif self.filters["value_quantity"] == "Quantity":
-			value_field = "stock_qty"
+			value_field = "qty"
 			self.entries = frappe.db.sql(
 				"""
 				select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.{value_field} * i.weight_per_unit as value_field, s.{date_field}
@@ -275,7 +283,7 @@ class Analytics(object):
 
 
 		elif self.filters["value_quantity"] == "QuantityWscheme":
-			value_field = "stock_qty"
+			value_field = "qty"
 			self.entries = frappe.db.sql(
 				f"""
 				select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.{value_field} * i.weight_per_unit as value_field, s.{self.date_field}
@@ -387,31 +395,63 @@ class Analytics(object):
 	def get_sales_transactions_based_on_item_group(self):
 		if self.filters["value_quantity"] == "Value":
 			value_field = "base_amount"
+			# self.entries = frappe.db.sql(
+			# 	f"""
+			# 	select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.base_amount as value_field, s.{self.date_field}
+			# 	from `tab{self.filters.doc_type} Item` i , `tab{self.filters.doc_type}` s
+			# 	where s.name = i.parent and i.docstatus = 1 and s.company = '{self.filters.company}'
+			# 	and s.{self.date_field} between '{self.filters.from_date}' and '{self.filters.to_date}'
+			# 	group by s.name
+			# """,
+			# # .format(
+			# # 		date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
+			# # 	),
+			# # 	(self.filters.company, self.filters.from_date, self.filters.to_date),
+			# 	as_dict=1
+			# )
+
 			self.entries = frappe.db.sql(
 				"""
-				select i.item_code as entity, i.item_name as entity_name, i.stock_uom, i.{value_field} as value_field, s.{date_field}
+				select i.item_group as entity, i.{value_field} as value_field, s.{date_field}
 				from `tab{doctype} Item` i , `tab{doctype}` s
 				where s.name = i.parent and i.docstatus = 1 and s.company = %s
 				and s.{date_field} between %s and %s
-				group by s.name
 			""".format(
 					date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
 				),
 				(self.filters.company, self.filters.from_date, self.filters.to_date),
 				as_dict=1,
 			)
+
+
+
+
+
 		elif self.filters["value_quantity"] == "Quantity":
 			value_field = "qty*i.weight_per_unit)"
-			
 			self.entries = frappe.db.sql(
-				f"""
-				select i.item_group as entity,sum(i.{value_field} as value_field, s.{self.date_field},s.name as name
-				from `tab{self.filters.doc_type} Item` i , `tab{self.filters.doc_type}` s
-				where s.name = i.parent and i.docstatus = 1 and s.company = '{self.filters.company}'
-				and s.{self.date_field} between '{self.filters.from_date}' and '{self.filters.to_date}'
-				group by s.name
+				"""
+				select i.item_group as entity, sum(i.{value_field} as value_field, s.{date_field}
+				from `tab{doctype} Item` i , `tab{doctype}` s
+				where s.name = i.parent and i.docstatus = 1 and s.company = %s
+				and s.{date_field} between %s and %s
+				group by s.name,i.item_group
 
-				""",as_dict=1,)
+			""".format(
+					date_field=self.date_field, value_field=value_field, doctype=self.filters.doc_type
+				),
+				(self.filters.company, self.filters.from_date, self.filters.to_date),
+				as_dict=1,
+			)
+			# self.entries = frappe.db.sql(
+			# 	f"""
+			# 	select i.item_group as entity,sum(i.{value_field} as value_field, s.{self.date_field},s.name as name
+			# 	from `tab{self.filters.doc_type} Item` i , `tab{self.filters.doc_type}` s
+			# 	where s.name = i.parent and i.docstatus = 1 and s.company = '{self.filters.company}'
+			# 	and s.{self.date_field} between '{self.filters.from_date}' and '{self.filters.to_date}'
+
+			# 	""",as_dict=1,)
+			# 	# group by s.name
 
 		elif self.filters["value_quantity"] == "QuantityWscheme":
 			value_field = "qty*i.weight_per_unit)"
@@ -422,9 +462,10 @@ class Analytics(object):
 				from `tab{self.filters.doc_type} Item` i , `tab{self.filters.doc_type}` s
 				where s.name = i.parent and i.docstatus = 1 and s.company = '{self.filters.company}'
 				and s.{self.date_field} between '{self.filters.from_date}' and '{self.filters.to_date}'  and  i.item_code NOT LIKE '%Scheme%'
-				group by s.name
+				group by s.name,i.item_group
 
 				""",as_dict=1,)
+				# group by s.name
 
 		self.get_groups()
 
